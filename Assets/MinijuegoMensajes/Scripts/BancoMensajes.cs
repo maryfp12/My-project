@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 public static class BancoMensajes
@@ -73,14 +74,21 @@ public static class BancoMensajes
             "Generalizar y discriminar a un grupo fomenta el odio en redes."),
     };
 
+    public static string UsuarioAlAzar() => "@" + Usuarios[Random.Range(0, Usuarios.Length)];
+
     public static ListaMensajes Crear()
     {
         var lista = new ListaMensajes();
         foreach (var mensaje in Mensajes)
-        {
-            string usuario = "@" + Usuarios[Random.Range(0, Usuarios.Length)];
-            lista.AgregarAlFinal(new NodoMensaje(mensaje.texto, mensaje.positivo, mensaje.consejo, usuario));
-        }
+            lista.AgregarAlFinal(new NodoMensaje(mensaje.texto, mensaje.positivo, mensaje.consejo, UsuarioAlAzar()));
         return lista;
+    }
+
+    public static void GuardarCSV(string ruta)
+    {
+        var filas = new List<string[]> { new[] { "texto", "tipo", "consejo", "usuario" } };
+        foreach (var mensaje in Mensajes)
+            filas.Add(new[] { mensaje.texto, mensaje.positivo ? "positivo" : "negativo", mensaje.consejo, UsuarioAlAzar() });
+        ArchivoCSV.Escribir(ruta, filas);
     }
 }

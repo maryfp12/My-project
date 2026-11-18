@@ -45,9 +45,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   scoreInicial: 3
-  segundosPorMensaje: 9
-  segundosMinimos: 4
-  aceleracionPorMensaje: 0.2
+  segundosPorCartel: 40
+  segundosMinimos: 22
+  reduccionPorCartel: 0.6
+  intervaloInicial: 7
+  intervaloMinimo: 3.5
+  reduccionIntervalo: 0.15
   escenaMenu: MainMenu
   personaje: {fileID: 0}
   texturaPersonaje: {fileID: 0}

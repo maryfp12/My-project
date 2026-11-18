@@ -1,4 +1,4 @@
-using System.Collections;
+using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 using UnityEngine.Events;
@@ -12,20 +12,14 @@ using UnityEngine.UI;
 
 public class JuegoMensajes : MonoBehaviour
 {
-    class Panal
-    {
-        public Transform raiz, icono;
-        public Renderer tapa;
-        public Color color;
-        public float fase;
-        public Vector3 Objetivo => raiz.position + Vector3.up * 1.55f;
-    }
-
     [Header("Reglas")]
     [SerializeField] int scoreInicial = 3;
-    [SerializeField] float segundosPorMensaje = 9f;
-    [SerializeField] float segundosMinimos = 4f;
-    [SerializeField] float aceleracionPorMensaje = 0.2f;
+    [SerializeField] float segundosPorCartel = 40f;
+    [SerializeField] float segundosMinimos = 22f;
+    [SerializeField] float reduccionPorCartel = 0.6f;
+    [SerializeField] float intervaloInicial = 7f;
+    [SerializeField] float intervaloMinimo = 3.5f;
+    [SerializeField] float reduccionIntervalo = 0.15f;
 
     [Header("Escenas")]
     [SerializeField] string escenaMenu = "MainMenu";
@@ -36,52 +30,62 @@ public class JuegoMensajes : MonoBehaviour
     [SerializeField] float alturaPersonaje = 1.7f;
 
     const int CantidadPrevias = 4;
-    const float EscalaPrevia = 0.3f;
-    const float DuracionAviso = 1.1f;
+    const float EscalaPrevia = 0.35f;
+    const float SeparacionPrevias = 0.78f;
+    const float RadioRecoger = 2.1f;
+    const float DuracionAviso = 1.3f;
+    const float CintaDesde = -8f;
+    const float CintaHasta = 5f;
+    const float CintaZ = 7.5f;
 
-    static readonly Vector3 PosicionLectura = new Vector3(0f, 3.4f, -0.7f);
-    static readonly Vector3 PosicionNino = new Vector3(0f, 0f, -1.7f);
-    static readonly Vector3 PosicionCamara = new Vector3(0f, 2.65f, -8.2f);
-    static readonly Vector3 ObjetivoCamara = new Vector3(0f, 2f, 0f);
-    static readonly Vector3 PosicionPanalNegativo = new Vector3(-3.4f, 0f, -1.4f);
-    static readonly Vector3 PosicionPanalPositivo = new Vector3(3.4f, 0f, -1.4f);
+    static readonly Vector3 InicioJugador = new Vector3(0f, 0.1f, -3f);
+    static readonly Vector3 CentroPlaza = new Vector3(0f, 0f, 1f);
+    static readonly Vector3 PosicionZonaNegativa = new Vector3(-9.6f, 0f, 1f);
+    static readonly Vector3 PosicionZonaPositiva = new Vector3(9.6f, 0f, 1f);
 
     ListaMensajes pendientes;
+    ListaMensajes enJuego;
     ListaMensajes historial;
-    TarjetaMensaje actual;
+    readonly List<Cartel> activos = new List<Cartel>();
     readonly TarjetaMensaje[] previas = new TarjetaMensaje[CantidadPrevias];
     readonly GameObject[] eslabones = new GameObject[CantidadPrevias - 1];
+    Cartel cargado, resaltado;
 
-    int score, aciertos, errores, partida;
-    float segundosActuales, tiempoAviso, escalaAviso = 1f, escalaScore = 1f;
+    int score, aciertos, errores, vencidos, mejorAciertos;
+    float segundosActuales, intervaloActual, tiempoSiguiente, tiempoPartida, tiempoAviso, escalaAviso = 1f, escalaScore = 1f;
     bool jugando;
 
     Camera camara;
+    CamaraOrbita orbita;
+    JugadorMovimiento jugador;
     PoseNino nino;
-    Panal panalPositivo, panalNegativo;
+    CintaTransportadora cinta;
+    ZonaClasificacion zonaPositiva, zonaNegativa;
 
-    GameObject panelFin, panelConsejo;
-    RectTransform insigniaScore;
-    Text textoScore, textoRestantes, textoAviso, textoConsejo, tituloFin, subtituloFin, textoRepaso;
-    Text numeroAciertos, numeroErrores, numeroFinal;
-
-    static Vector3 PosicionPrevia(int indice) => new Vector3(3.35f + indice * 1.3f, 4.7f, 2.6f);
+    GameObject panelFin, panelConsejo, panelLectura;
+    RectTransform insigniaScore, barraLectura;
+    Image rellenoLectura;
+    Text textoScore, textoRecord, textoRestantes, textoAviso, textoConsejo;
+    Text lecturaUsuario, lecturaTexto, lecturaAccion;
+    Text tituloFin, subtituloFin, textoRepaso, textoArchivo, numeroAciertos, numeroErrores, numeroFinal;
 
     void Start()
     {
         ConfigurarCamaraYLuz();
         Parque.Construir();
-        panalNegativo = CrearPanal("Negativo", PosicionPanalNegativo, Estilo.Rojo, Estilo.RojoOscuro, "NEGATIVO", "A", "←", false);
-        panalPositivo = CrearPanal("Positivo", PosicionPanalPositivo, Estilo.Verde, Estilo.VerdeOscuro, "POSITIVO", "D", "→", true);
+        cinta = CintaTransportadora.Crear(CintaDesde, CintaHasta, CintaZ);
+        zonaNegativa = ZonaClasificacion.Crear(false, PosicionZonaNegativa, CentroPlaza, camara.transform);
+        zonaPositiva = ZonaClasificacion.Crear(true, PosicionZonaPositiva, CentroPlaza, camara.transform);
         CrearEslabones();
-        ColocarNino();
+        CrearJugador();
+        orbita.Seguir(jugador.transform, 0f);
         ConstruirHud();
+        mejorAciertos = RegistroPartidas.MejorAciertos();
         Iniciar();
     }
 
     void Update()
     {
-        AnimarPanales();
         AnimarHud();
 
         var teclado = Keyboard.current;
@@ -93,105 +97,167 @@ public class JuegoMensajes : MonoBehaviour
             return;
         }
 
-        if (actual == null || !actual.Clasificable) return;
+        tiempoPartida += Time.deltaTime;
+        GenerarCarteles(Time.deltaTime);
 
-        if (teclado != null)
+        var cercano = cargado == null ? CartelCercano() : null;
+        Resaltar(cercano);
+
+        bool llevando = cargado != null;
+        zonaPositiva.Invitar(llevando);
+        zonaNegativa.Invitar(llevando);
+
+        if (llevando)
         {
-            if (teclado.aKey.wasPressedThisFrame || teclado.leftArrowKey.wasPressedThisFrame)
+            cargado.Sostener(PosicionCarga());
+            var zona = ZonaDelJugador();
+            if (zona != null)
             {
-                Clasificar(false);
-                return;
-            }
-            if (teclado.dKey.wasPressedThisFrame || teclado.rightArrowKey.wasPressedThisFrame)
-            {
-                Clasificar(true);
+                Entregar(zona);
                 return;
             }
         }
 
-        var raton = Mouse.current;
-        if (raton == null || !raton.leftButton.wasPressedThisFrame) return;
-        if (!Physics.Raycast(camara.ScreenPointToRay(raton.position.ReadValue()), out var golpe, 100f)) return;
-        if (golpe.transform.IsChildOf(panalPositivo.raiz)) Clasificar(true);
-        else if (golpe.transform.IsChildOf(panalNegativo.raiz)) Clasificar(false);
+        if (PresionoInteractuar())
+        {
+            if (cargado != null) SoltarEnSuelo();
+            else if (cercano != null) Recoger(cercano);
+        }
+
+        ActualizarLectura(cargado != null ? cargado : cercano);
     }
 
     void Iniciar()
     {
-        LimpiarTarjetas();
-        pendientes = BancoMensajes.Crear();
+        LimpiarCarteles();
+        pendientes = ArchivoMensajes.Cargar();
         pendientes.Mezclar();
+        enJuego = new ListaMensajes();
         historial = new ListaMensajes();
+
         score = scoreInicial;
         aciertos = 0;
         errores = 0;
-        segundosActuales = segundosPorMensaje;
+        vencidos = 0;
+        segundosActuales = segundosPorCartel;
+        intervaloActual = intervaloInicial;
+        tiempoSiguiente = 1.5f;
+        tiempoPartida = 0f;
         jugando = true;
+
+        jugador.Teletransportar(InicioJugador, Quaternion.identity);
+        jugador.PuedeMoverse = true;
         panelFin.SetActive(false);
         MostrarConsejo("");
-        Avisar("¡Clasifica los mensajes!", Color.white);
+        Avisar("¡Lleva cada cartel al panal correcto!", Color.white);
         ActualizarPrevias(false);
-        StartCoroutine(SeguirLuego(partida, 0.6f));
         ActualizarHud();
     }
 
-    void SiguienteTarjeta()
+    void GenerarCarteles(float dt)
     {
-        if (!jugando) return;
-        if (pendientes.EstaVacia)
-        {
-            Terminar();
-            return;
-        }
+        tiempoSiguiente -= dt;
+        if (tiempoSiguiente > 0f || pendientes.EstaVacia || cinta.Llena) return;
 
         var nodo = pendientes.SacarPrimero();
-        actual = TarjetaMensaje.Crear(nodo, false);
-        actual.transform.position = PosicionPrevia(0);
-        actual.transform.localScale = Vector3.one * EscalaPrevia;
-        actual.Presentar(PosicionLectura, segundosActuales, AlAgotarse);
-        segundosActuales = Mathf.Max(segundosMinimos, segundosActuales - aceleracionPorMensaje);
+        enJuego.AgregarAlFinal(nodo);
 
-        if (nino != null) nino.AvisarMensaje();
+        var cartel = Cartel.Crear(nodo, cinta.Entrada, segundosActuales, camara.transform, AlVencer);
+        cinta.Agregar(cartel);
+        activos.Add(cartel);
+
+        segundosActuales = Mathf.Max(segundosMinimos, segundosActuales - reduccionPorCartel);
+        intervaloActual = Mathf.Max(intervaloMinimo, intervaloActual - reduccionIntervalo);
+        tiempoSiguiente = intervaloActual;
+
         ActualizarPrevias(true);
         ActualizarHud();
     }
 
-    void Clasificar(bool eligioPositivo)
+    Cartel CartelCercano()
     {
-        var tarjeta = actual;
-        actual = null;
-        bool acierto = tarjeta.Nodo.EsPositivo == eligioPositivo;
-        var panal = eligioPositivo ? panalPositivo : panalNegativo;
-
-        StartCoroutine(Destellar(panal, acierto));
-        if (nino != null)
+        Cartel mejor = null;
+        float mejorDistancia = RadioRecoger;
+        var posicion = jugador.transform.position;
+        foreach (var cartel in activos)
         {
-            nino.Senalar(panal.Objetivo, 1f);
-            if (acierto) nino.Celebrar();
-            else nino.Negar();
+            if (cartel == null || !cartel.Recogible) continue;
+            var diferencia = cartel.transform.position - posicion;
+            diferencia.y = 0f;
+            float distancia = diferencia.magnitude;
+            if (distancia >= mejorDistancia) continue;
+            mejorDistancia = distancia;
+            mejor = cartel;
         }
+        return mejor;
+    }
+
+    void Resaltar(Cartel cartel)
+    {
+        if (resaltado == cartel) return;
+        if (resaltado != null) resaltado.Resaltar(false);
+        if (cartel != null) cartel.Resaltar(true);
+        resaltado = cartel;
+    }
+
+    void Recoger(Cartel cartel)
+    {
+        cinta.Quitar(cartel);
+        cartel.Resaltar(false);
+        resaltado = null;
+        cartel.Cargar();
+        cargado = cartel;
+        nino.Cargando = true;
+    }
+
+    void SoltarEnSuelo()
+    {
+        var suelo = jugador.transform.position + jugador.transform.forward * 1.3f;
+        suelo.y = 0f;
+        cargado.Soltar(Parque.DentroDeLaPlaza(suelo, 0.8f));
+        cargado = null;
+        nino.Cargando = false;
+    }
+
+    void Entregar(ZonaClasificacion zona)
+    {
+        var cartel = cargado;
+        cargado = null;
+        nino.Cargando = false;
+        activos.Remove(cartel);
+
+        bool acierto = cartel.Nodo.EsPositivo == zona.EsPositiva;
+        zona.Destellar(acierto);
+        if (acierto) nino.Celebrar();
+        else nino.Negar();
         Avisar(acierto ? "¡Correcto!  +1" : "¡Ups!  −1", acierto ? Estilo.Verde : Estilo.Rojo);
 
-        int ronda = partida;
-        tarjeta.Lanzar(panal.Objetivo, 1.2f, 0.1f, true, () => StartCoroutine(SeguirLuego(ronda, 0.3f)));
-        Registrar(tarjeta.Nodo, acierto);
+        cartel.Lanzar(zona.PuntoEntrega, 1.4f, 0.1f, true, null);
+        ActualizarLectura(null);
+        Registrar(cartel.Nodo, acierto, false);
     }
 
-    void AlAgotarse(TarjetaMensaje tarjeta)
+    void AlVencer(Cartel cartel)
     {
-        if (tarjeta != actual) return;
-        actual = null;
-        Avisar("¡Se te pasó!  −1", Estilo.Rojo);
-        if (nino != null) nino.Negar();
+        if (!jugando) return;
+        if (cartel == cargado)
+        {
+            cargado = null;
+            nino.Cargando = false;
+        }
+        cinta.Quitar(cartel);
+        activos.Remove(cartel);
 
-        int ronda = partida;
-        tarjeta.Lanzar(PosicionNino + Vector3.up * (alturaPersonaje + 0.2f), 0.2f, 0.05f, false, () => StartCoroutine(SeguirLuego(ronda, 0.3f)));
-        Registrar(tarjeta.Nodo, false);
+        Avisar("¡Se venció un cartel!  −1", Estilo.Rojo);
+        nino.Negar();
+        cartel.Explotar();
+        Registrar(cartel.Nodo, false, true);
     }
 
-    void Registrar(NodoMensaje nodo, bool acierto)
+    void Registrar(NodoMensaje nodo, bool acierto, bool vencido)
     {
         nodo.Acertado = acierto;
+        enJuego.Quitar(nodo);
         historial.AgregarAlFinal(nodo);
 
         if (acierto)
@@ -204,35 +270,39 @@ public class JuegoMensajes : MonoBehaviour
         {
             score--;
             errores++;
+            if (vencido) vencidos++;
             MostrarConsejo((nodo.EsPositivo ? "Ese mensaje era POSITIVO. " : "Ese mensaje era NEGATIVO. ") + nodo.Consejo);
         }
 
         escalaScore = 1.35f;
         ActualizarHud();
-        if (score <= 0) Terminar();
+        if (score <= 0) Terminar(false);
+        else if (pendientes.EstaVacia && enJuego.EstaVacia) Terminar(true);
     }
 
-    IEnumerator SeguirLuego(int ronda, float segundos)
-    {
-        yield return new WaitForSeconds(segundos);
-        if (ronda == partida) SiguienteTarjeta();
-    }
-
-    void Terminar()
+    void Terminar(bool gano)
     {
         jugando = false;
-        LimpiarTarjetas();
+        jugador.PuedeMoverse = false;
+        LimpiarCarteles();
         MostrarConsejo("");
+        ActualizarLectura(null);
 
-        bool gano = score > 0;
+        bool guardado = RegistroPartidas.Guardar(gano, aciertos, errores, vencidos, Mathf.Max(score, 0), tiempoPartida);
+        mejorAciertos = Mathf.Max(mejorAciertos, aciertos);
+
         tituloFin.text = gano ? "¡Ganaste!" : "¡Perdiste!";
         tituloFin.color = gano ? Estilo.Verde : Estilo.Rojo;
         subtituloFin.text = gano
-            ? "Clasificaste toda la lista sin quedarte sin puntos."
+            ? "Llevaste todos los carteles sin quedarte sin puntos."
             : "Tu score llegó a 0. ¡Inténtalo otra vez!";
+        if (vencidos > 0) subtituloFin.text += $"  ({vencidos} se vencieron)";
         numeroAciertos.text = aciertos.ToString();
         numeroErrores.text = errores.ToString();
         numeroFinal.text = Mathf.Max(score, 0).ToString();
+        textoArchivo.text = guardado
+            ? $"Partida guardada en {RegistroPartidas.NombreArchivo}  ·  Partidas jugadas: {RegistroPartidas.CantidadPartidas()}  ·  Récord de aciertos: {mejorAciertos}"
+            : $"No se pudo guardar {RegistroPartidas.NombreArchivo}  ·  Récord de aciertos: {mejorAciertos}";
 
         var repaso = new StringBuilder();
         int mostrados = 0;
@@ -248,8 +318,9 @@ public class JuegoMensajes : MonoBehaviour
             repaso.AppendLine($"• \"{nodo.Texto}\"  (era <b>{tipo}</b>)");
             mostrados++;
         }
-        textoRepaso.text = mostrados == 0 ? "¡No fallaste ningún mensaje!" : "<b>Para repasar:</b>\n" + repaso;
+        textoRepaso.text = mostrados == 0 ? "¡No fallaste ningún cartel!" : "<b>Para repasar:</b>\n" + repaso;
         panelFin.SetActive(true);
+        ActualizarHud();
     }
 
     void IrAlMenu()
@@ -264,11 +335,15 @@ public class JuegoMensajes : MonoBehaviour
         else Avisar(aviso, Color.white);
     }
 
-    void LimpiarTarjetas()
+    void LimpiarCarteles()
     {
-        partida++;
-        if (actual != null) Destroy(actual.gameObject);
-        actual = null;
+        foreach (var cartel in activos)
+            if (cartel != null) Destroy(cartel.gameObject);
+        activos.Clear();
+        cinta.Vaciar();
+        cargado = null;
+        resaltado = null;
+        if (nino != null) nino.Cargando = false;
         BorrarPrevias();
     }
 
@@ -280,6 +355,8 @@ public class JuegoMensajes : MonoBehaviour
             previas[i] = null;
         }
     }
+
+    Vector3 PosicionPrevia(int indice) => cinta.Tolva + new Vector3(0f, 0.75f + indice * SeparacionPrevias, 0f);
 
     void ActualizarPrevias(bool desplazar)
     {
@@ -298,6 +375,33 @@ public class JuegoMensajes : MonoBehaviour
         for (int i = 0; i < eslabones.Length; i++) eslabones[i].SetActive(i < cantidad - 1);
     }
 
+    void CrearEslabones()
+    {
+        for (int i = 0; i < eslabones.Length; i++)
+        {
+            var centro = (PosicionPrevia(i) + PosicionPrevia(i + 1)) * 0.5f + Vector3.forward * 0.08f;
+            eslabones[i] = ConstructorEscena.Bloque(PrimitiveType.Capsule, "Siguiente", null, centro, new Vector3(0.08f, 0.12f, 0.08f), Estilo.MielOscura);
+        }
+    }
+
+    Vector3 PosicionCarga() => jugador.transform.position + Vector3.up * (alturaPersonaje * 1.12f) + jugador.transform.forward * 0.15f;
+
+    ZonaClasificacion ZonaDelJugador()
+    {
+        var posicion = jugador.transform.position;
+        if (zonaPositiva.Contiene(posicion)) return zonaPositiva;
+        if (zonaNegativa.Contiene(posicion)) return zonaNegativa;
+        return null;
+    }
+
+    static bool PresionoInteractuar()
+    {
+        var teclado = Keyboard.current;
+        if (teclado != null && teclado.eKey.wasPressedThisFrame) return true;
+        var mando = Gamepad.current;
+        return mando != null && mando.buttonSouth.wasPressedThisFrame;
+    }
+
     void ConfigurarCamaraYLuz()
     {
         camara = Camera.main;
@@ -307,15 +411,15 @@ public class JuegoMensajes : MonoBehaviour
             go.tag = "MainCamera";
             camara = go.GetComponent<Camera>();
         }
-        camara.transform.SetPositionAndRotation(PosicionCamara, Quaternion.LookRotation(ObjetivoCamara - PosicionCamara));
-        camara.fieldOfView = 48f;
+        camara.fieldOfView = 55f;
         camara.nearClipPlane = 0.1f;
-        camara.farClipPlane = 200f;
+        camara.farClipPlane = 220f;
         camara.clearFlags = CameraClearFlags.SolidColor;
         camara.backgroundColor = Estilo.Cielo;
         var datos = camara.GetUniversalAdditionalCameraData();
         datos.antialiasing = AntialiasingMode.SubpixelMorphologicalAntiAliasing;
         datos.renderShadows = true;
+        orbita = camara.gameObject.AddComponent<CamaraOrbita>();
 
         var luz = new GameObject("Sol", typeof(Light)).GetComponent<Light>();
         luz.type = LightType.Directional;
@@ -323,7 +427,7 @@ public class JuegoMensajes : MonoBehaviour
         luz.intensity = 1.25f;
         luz.shadows = LightShadows.Soft;
         luz.shadowStrength = 0.55f;
-        luz.transform.rotation = Quaternion.Euler(42f, -38f, 0f);
+        luz.transform.rotation = Quaternion.Euler(48f, -35f, 0f);
 
         RenderSettings.skybox = null;
         RenderSettings.ambientMode = AmbientMode.Trilight;
@@ -333,133 +437,77 @@ public class JuegoMensajes : MonoBehaviour
         RenderSettings.fog = true;
         RenderSettings.fogMode = FogMode.Linear;
         RenderSettings.fogColor = Estilo.Neblina;
-        RenderSettings.fogStartDistance = 24f;
-        RenderSettings.fogEndDistance = 80f;
+        RenderSettings.fogStartDistance = 28f;
+        RenderSettings.fogEndDistance = 95f;
         DynamicGI.UpdateEnvironment();
     }
 
-    void ColocarNino()
+    void CrearJugador()
     {
+        var raiz = new GameObject("Jugador");
+        raiz.transform.SetPositionAndRotation(InicioJugador, Quaternion.identity);
+        var control = raiz.AddComponent<CharacterController>();
+        control.height = alturaPersonaje;
+        control.radius = 0.35f;
+        control.center = new Vector3(0f, alturaPersonaje * 0.5f, 0f);
+        control.stepOffset = 0.3f;
+        jugador = raiz.AddComponent<JugadorMovimiento>();
+
         var modelo = personaje != null ? personaje : Resources.Load<GameObject>("Nino/Walking");
-        if (modelo == null) return;
-
-        var textura = texturaPersonaje;
-        if (textura == null && personaje == null) textura = Resources.Load<Texture2D>("Nino/texture_diffuse");
-
-        var instancia = Instantiate(modelo);
-        instancia.name = "Nino";
-        foreach (var componente in instancia.GetComponentsInChildren<MonoBehaviour>()) componente.enabled = false;
-        foreach (var control in instancia.GetComponentsInChildren<CharacterController>()) control.enabled = false;
-        foreach (var animador in instancia.GetComponentsInChildren<Animator>()) animador.enabled = false;
-        foreach (var camaraExtra in instancia.GetComponentsInChildren<Camera>()) camaraExtra.enabled = false;
-        foreach (var oido in instancia.GetComponentsInChildren<AudioListener>()) oido.enabled = false;
-
-        if (textura != null)
+        if (modelo != null)
         {
-            var material = ConstructorEscena.NuevoMaterial(Color.white, 0.12f);
-            material.mainTexture = textura;
-            foreach (var r in instancia.GetComponentsInChildren<Renderer>())
-            {
-                var materiales = r.sharedMaterials;
-                for (int i = 0; i < materiales.Length; i++) materiales[i] = material;
-                r.sharedMaterials = materiales;
-            }
-        }
+            var instancia = Instantiate(modelo, raiz.transform);
+            instancia.name = "Nino";
+            foreach (var componente in instancia.GetComponentsInChildren<MonoBehaviour>()) componente.enabled = false;
+            foreach (var otro in instancia.GetComponentsInChildren<CharacterController>()) otro.enabled = false;
+            foreach (var animador in instancia.GetComponentsInChildren<Animator>()) animador.enabled = false;
+            foreach (var camaraExtra in instancia.GetComponentsInChildren<Camera>()) camaraExtra.enabled = false;
+            foreach (var oido in instancia.GetComponentsInChildren<AudioListener>()) oido.enabled = false;
+            foreach (var colisionador in instancia.GetComponentsInChildren<Collider>()) colisionador.enabled = false;
+            AplicarTextura(instancia);
 
-        nino = instancia.AddComponent<PoseNino>();
-        nino.Preparar(PosicionNino, alturaPersonaje);
-    }
-
-    Panal CrearPanal(string nombre, Vector3 posicion, Color color, Color oscuro, string titulo, string tecla, string flecha, bool positivo)
-    {
-        var raiz = new GameObject("Panal" + nombre).transform;
-        raiz.position = posicion;
-        var colisionador = raiz.gameObject.AddComponent<BoxCollider>();
-        colisionador.center = new Vector3(0f, 1.4f, 0f);
-        colisionador.size = new Vector3(2.4f, 2.9f, 2.4f);
-
-        var acostado = Quaternion.Euler(90f, 0f, 0f);
-        ConstructorEscena.Figura("Base", Mallas.Hexagono, raiz, new Vector3(0f, 0.22f, 0f), acostado, new Vector3(1.15f, 1.15f, 0.44f), oscuro);
-        var tapa = ConstructorEscena.Figura("Tapa", Mallas.Hexagono, raiz, new Vector3(0f, 0.5f, 0f), acostado, new Vector3(1f, 1f, 0.14f), color);
-
-        var icono = new GameObject("Icono").transform;
-        icono.SetParent(raiz, false);
-        icono.localPosition = new Vector3(0f, 1.55f, 0f);
-        var deFrente = Quaternion.Euler(90f, 0f, 0f);
-        ConstructorEscena.Bloque(PrimitiveType.Cylinder, "Aro", icono, new Vector3(0f, 0f, 0.03f), deFrente, new Vector3(1.08f, 0.04f, 1.08f), oscuro);
-        ConstructorEscena.Bloque(PrimitiveType.Cylinder, "Disco", icono, Vector3.zero, deFrente, new Vector3(0.95f, 0.05f, 0.95f), Color.white);
-
-        if (positivo)
-        {
-            ConstructorEscena.Bloque(PrimitiveType.Cube, "Corazon", icono, new Vector3(0f, -0.05f, -0.08f), Quaternion.Euler(0f, 0f, 45f), new Vector3(0.36f, 0.36f, 0.16f), Estilo.Corazon);
-            ConstructorEscena.Bloque(PrimitiveType.Sphere, "Corazon", icono, new Vector3(-0.127f, 0.077f, -0.08f), Quaternion.identity, new Vector3(0.36f, 0.36f, 0.16f), Estilo.Corazon);
-            ConstructorEscena.Bloque(PrimitiveType.Sphere, "Corazon", icono, new Vector3(0.127f, 0.077f, -0.08f), Quaternion.identity, new Vector3(0.36f, 0.36f, 0.16f), Estilo.Corazon);
+            nino = instancia.AddComponent<PoseNino>();
+            nino.Preparar(alturaPersonaje);
+            nino.ConfigurarCaminata(BuscarCaminata(modelo));
         }
         else
         {
-            ConstructorEscena.Bloque(PrimitiveType.Cube, "Cruz", icono, new Vector3(0f, 0f, -0.08f), Quaternion.Euler(0f, 0f, 45f), new Vector3(0.6f, 0.15f, 0.14f), Estilo.Rojo);
-            ConstructorEscena.Bloque(PrimitiveType.Cube, "Cruz", icono, new Vector3(0f, 0f, -0.08f), Quaternion.Euler(0f, 0f, -45f), new Vector3(0.6f, 0.15f, 0.14f), Estilo.Rojo);
+            var cuerpo = ConstructorEscena.Bloque(PrimitiveType.Capsule, "Cuerpo", raiz.transform, new Vector3(0f, alturaPersonaje * 0.5f, 0f), new Vector3(0.7f, alturaPersonaje * 0.5f, 0.7f), Estilo.Azul);
+            nino = cuerpo.AddComponent<PoseNino>();
         }
 
-        var etiqueta = ConstructorEscena.CanvasMundo("Etiqueta", raiz, new Vector3(0f, 2.55f, 0f), new Vector2(460f, 230f), 0.0055f).transform;
-        etiqueta.rotation = camara.transform.rotation;
-
-        var textoTitulo = ConstructorEscena.Texto(etiqueta, "Titulo", Estilo.Negrita, 76, TextAnchor.MiddleCenter, Color.white, new Vector2(0f, 0.5f), Vector2.one);
-        textoTitulo.text = titulo;
-        ConstructorEscena.Contorno(textoTitulo, oscuro, 4f);
-        ConstructorEscena.Sombra(textoTitulo, new Color(0f, 0f, 0f, 0.25f), new Vector2(0f, -6f));
-
-        Tecla(etiqueta, tecla, Estilo.Negrita, new Vector2(-48f, 18f));
-        Tecla(etiqueta, flecha, Estilo.Simbolos, new Vector2(48f, 18f));
-
-        return new Panal { raiz = raiz, icono = icono, tapa = tapa.GetComponent<Renderer>(), color = color, fase = positivo ? 1.3f : 0f };
+        jugador.Configurar(camara.transform, nino);
     }
 
-    static void Tecla(Transform padre, string simbolo, Font fuente, Vector2 posicion)
+    void AplicarTextura(GameObject instancia)
     {
-        var tecla = ConstructorEscena.Imagen(padre, "Tecla", SpritesUI.Redondeado, Color.white, Vector2.zero, Vector2.zero, 2.2f);
-        ConstructorEscena.Fijar(tecla.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), posicion, new Vector2(80f, 80f));
-        ConstructorEscena.Sombra(tecla, new Color(0.4f, 0.45f, 0.55f, 0.8f), new Vector2(0f, -7f));
-        var texto = ConstructorEscena.Texto(tecla.transform, "Simbolo", fuente, 48, TextAnchor.MiddleCenter, Estilo.TextoOscuro, Vector2.zero, Vector2.one);
-        texto.fontStyle = fuente == Estilo.Simbolos ? FontStyle.Bold : FontStyle.Normal;
-        texto.text = simbolo;
-    }
+        var textura = texturaPersonaje;
+        if (textura == null && personaje == null) textura = Resources.Load<Texture2D>("Nino/texture_diffuse");
+        if (textura == null) return;
 
-    void CrearEslabones()
-    {
-        for (int i = 0; i < eslabones.Length; i++)
+        var material = ConstructorEscena.NuevoMaterial(Color.white, 0.12f);
+        material.mainTexture = textura;
+        foreach (var r in instancia.GetComponentsInChildren<Renderer>())
         {
-            var centro = (PosicionPrevia(i) + PosicionPrevia(i + 1)) * 0.5f;
-            eslabones[i] = ConstructorEscena.Bloque(PrimitiveType.Capsule, "Siguiente", null, centro, Quaternion.Euler(0f, 0f, 90f), new Vector3(0.08f, 0.12f, 0.08f), Estilo.MielOscura);
+            var materiales = r.sharedMaterials;
+            for (int i = 0; i < materiales.Length; i++) materiales[i] = material;
+            r.sharedMaterials = materiales;
         }
     }
 
-    void AnimarPanales()
+    AnimationClip BuscarCaminata(GameObject modelo)
     {
-        AnimarPanal(panalNegativo);
-        AnimarPanal(panalPositivo);
-    }
-
-    static void AnimarPanal(Panal panal)
-    {
-        float t = Time.time * 1.4f + panal.fase;
-        panal.icono.localRotation = Quaternion.Euler(0f, Mathf.Sin(t) * 18f, 0f);
-        panal.icono.localPosition = new Vector3(0f, 1.55f + Mathf.Sin(t * 1.3f) * 0.06f, 0f);
-    }
-
-    IEnumerator Destellar(Panal panal, bool acierto)
-    {
-        const float duracion = 0.45f;
-        var destello = acierto ? Color.white : Estilo.Oscurecer(panal.color, 0.4f);
-        for (float t = 0f; t < duracion; t += Time.deltaTime)
+        if (personaje == null)
         {
-            float k = t / duracion;
-            ConstructorEscena.Pintar(panal.tapa, Color.Lerp(destello, panal.color, k));
-            panal.icono.localScale = Vector3.one * (1f + 0.35f * Mathf.Sin(k * Mathf.PI));
-            yield return null;
+            foreach (var clip in Resources.LoadAll<AnimationClip>("Nino/Walking"))
+                if (!clip.name.StartsWith("__preview__")) return clip;
+            return null;
         }
-        ConstructorEscena.Pintar(panal.tapa, panal.color);
-        panal.icono.localScale = Vector3.one;
+
+        var animador = modelo.GetComponentInChildren<Animator>();
+        if (animador == null || animador.runtimeAnimatorController == null) return null;
+        var clips = animador.runtimeAnimatorController.animationClips;
+        return clips.Length > 0 ? clips[0] : null;
     }
 
     void ConstruirHud()
@@ -469,7 +517,7 @@ public class JuegoMensajes : MonoBehaviour
 
         var hud = ConstructorEscena.CanvasPantalla("Hud").transform;
 
-        var titulo = ConstructorEscena.Texto(hud, "Titulo", Estilo.Negrita, 68, TextAnchor.UpperCenter, Estilo.Miel, new Vector2(0.3f, 0.86f), new Vector2(0.7f, 0.985f));
+        var titulo = ConstructorEscena.Texto(hud, "Titulo", Estilo.Negrita, 64, TextAnchor.UpperCenter, Estilo.Miel, new Vector2(0.3f, 0.87f), new Vector2(0.7f, 0.985f));
         titulo.text = "BUMBLE CRUSH";
         ConstructorEscena.Contorno(titulo, Estilo.Cafe, 5f);
         ConstructorEscena.Sombra(titulo, new Color(1f, 1f, 1f, 0.9f), new Vector2(0f, -8f));
@@ -484,37 +532,73 @@ public class JuegoMensajes : MonoBehaviour
         ConstructorEscena.Contorno(textoScore, Estilo.Cafe, 4f);
         var etiquetaScore = ConstructorEscena.Texto(insigniaScore, "Etiqueta", Estilo.Negrita, 24, TextAnchor.MiddleCenter, Estilo.Cafe, new Vector2(0f, 0.12f), new Vector2(1f, 0.32f));
         etiquetaScore.text = "SCORE";
+        textoRecord = ConstructorEscena.Texto(hud, "Record", Estilo.Negrita, 26, TextAnchor.UpperCenter, Color.white, Vector2.zero, Vector2.zero);
+        ConstructorEscena.Fijar(textoRecord.rectTransform, new Vector2(0f, 1f), new Vector2(0.5f, 1f), new Vector2(125f, -224f), new Vector2(260f, 40f));
+        ConstructorEscena.Contorno(textoRecord, Estilo.Cafe, 2.5f);
 
         var pastilla = ConstructorEscena.Imagen(hud, "Lista", SpritesUI.Redondeado, new Color(1f, 1f, 1f, 0.94f), Vector2.zero, Vector2.zero, 1.2f);
-        ConstructorEscena.Fijar(pastilla.rectTransform, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-36f, -36f), new Vector2(430f, 84f));
+        ConstructorEscena.Fijar(pastilla.rectTransform, new Vector2(1f, 1f), new Vector2(1f, 1f), new Vector2(-36f, -36f), new Vector2(470f, 84f));
         ConstructorEscena.Sombra(pastilla, new Color(0.15f, 0.3f, 0.55f, 0.35f), new Vector2(0f, -7f));
         var hexLista = ConstructorEscena.Imagen(pastilla.transform, "Icono", SpritesUI.Hexagono, Estilo.Miel, Vector2.zero, Vector2.zero);
         ConstructorEscena.Fijar(hexLista.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(18f, 0f), new Vector2(56f, 56f));
-        textoRestantes = ConstructorEscena.Texto(pastilla.transform, "Texto", Estilo.SemiNegrita, 32, TextAnchor.MiddleLeft, Estilo.TextoOscuro, new Vector2(0.2f, 0f), new Vector2(0.97f, 1f));
+        textoRestantes = ConstructorEscena.Texto(pastilla.transform, "Texto", Estilo.SemiNegrita, 30, TextAnchor.MiddleLeft, Estilo.TextoOscuro, new Vector2(0.18f, 0f), new Vector2(0.97f, 1f));
 
-        textoAviso = ConstructorEscena.Texto(hud, "Aviso", Estilo.Negrita, 88, TextAnchor.MiddleCenter, Color.white, new Vector2(0.15f, 0.56f), new Vector2(0.85f, 0.72f));
+        textoAviso = ConstructorEscena.Texto(hud, "Aviso", Estilo.Negrita, 84, TextAnchor.MiddleCenter, Color.white, new Vector2(0.1f, 0.56f), new Vector2(0.9f, 0.72f));
         ConstructorEscena.Contorno(textoAviso, new Color(0.15f, 0.15f, 0.25f, 0.9f), 5f);
         ConstructorEscena.Sombra(textoAviso, new Color(0f, 0f, 0f, 0.3f), new Vector2(0f, -8f));
 
+        ConstruirControles(hud);
         ConstruirConsejo(hud);
+        ConstruirLectura(hud);
         ConstruirPanelFin(hud);
+    }
+
+    void ConstruirControles(Transform hud)
+    {
+        var panel = ConstructorEscena.Imagen(hud, "Controles", SpritesUI.Redondeado, new Color(0.12f, 0.16f, 0.28f, 0.72f), Vector2.zero, Vector2.zero, 1.4f);
+        ConstructorEscena.Fijar(panel.rectTransform, new Vector2(0f, 0f), new Vector2(0f, 0f), new Vector2(28f, 28f), new Vector2(330f, 210f));
+        var texto = ConstructorEscena.Texto(panel.transform, "Texto", Estilo.SemiNegrita, 22, TextAnchor.MiddleLeft, Color.white, new Vector2(0.07f, 0.05f), new Vector2(0.95f, 0.95f));
+        texto.lineSpacing = 1.15f;
+        texto.text = "<b>WASD</b>  moverse\n<b>Shift</b>  correr\n<b>E</b>  recoger / soltar\n<b>Clic derecho</b>  girar cámara\n<b>Rueda</b>  acercar / alejar";
     }
 
     void ConstruirConsejo(Transform hud)
     {
         var panel = ConstructorEscena.Imagen(hud, "Consejo", SpritesUI.Redondeado, Estilo.Crema, Vector2.zero, Vector2.zero, 0.9f);
-        ConstructorEscena.Fijar(panel.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 34f), new Vector2(1240f, 130f));
+        ConstructorEscena.Fijar(panel.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0f, -150f), new Vector2(1100f, 116f));
         ConstructorEscena.Contorno(panel, Estilo.Miel, 5f);
         ConstructorEscena.Sombra(panel, new Color(0f, 0f, 0f, 0.25f), new Vector2(0f, -8f));
         panelConsejo = panel.gameObject;
 
         var hex = ConstructorEscena.Imagen(panel.transform, "Icono", SpritesUI.Hexagono, Estilo.Miel, Vector2.zero, Vector2.zero);
-        ConstructorEscena.Fijar(hex.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(24f, 0f), new Vector2(90f, 90f));
-        var exclamacion = ConstructorEscena.Texto(hex.transform, "Signo", Estilo.Negrita, 54, TextAnchor.MiddleCenter, Color.white, Vector2.zero, Vector2.one);
+        ConstructorEscena.Fijar(hex.rectTransform, new Vector2(0f, 0.5f), new Vector2(0f, 0.5f), new Vector2(22f, 0f), new Vector2(80f, 80f));
+        var exclamacion = ConstructorEscena.Texto(hex.transform, "Signo", Estilo.Negrita, 48, TextAnchor.MiddleCenter, Color.white, Vector2.zero, Vector2.one);
         exclamacion.text = "!";
         ConstructorEscena.Contorno(exclamacion, Estilo.Cafe, 3f);
 
-        textoConsejo = ConstructorEscena.Texto(panel.transform, "Texto", Estilo.SemiNegrita, 32, TextAnchor.MiddleLeft, Estilo.TextoOscuro, new Vector2(0.11f, 0.08f), new Vector2(0.97f, 0.92f));
+        textoConsejo = ConstructorEscena.Texto(panel.transform, "Texto", Estilo.SemiNegrita, 28, TextAnchor.MiddleLeft, Estilo.TextoOscuro, new Vector2(0.11f, 0.08f), new Vector2(0.97f, 0.92f));
+    }
+
+    void ConstruirLectura(Transform hud)
+    {
+        var panel = ConstructorEscena.Imagen(hud, "Lectura", SpritesUI.Redondeado, Color.white, Vector2.zero, Vector2.zero, 0.8f);
+        ConstructorEscena.Fijar(panel.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(60f, 32f), new Vector2(1180f, 200f));
+        ConstructorEscena.Contorno(panel, Estilo.BordeBurbuja, 5f);
+        ConstructorEscena.Sombra(panel, new Color(0.1f, 0.2f, 0.4f, 0.3f), new Vector2(0f, -9f));
+        panelLectura = panel.gameObject;
+
+        lecturaUsuario = ConstructorEscena.Texto(panel.transform, "Usuario", Estilo.Negrita, 28, TextAnchor.MiddleLeft, new Color(0.22f, 0.38f, 0.75f), new Vector2(0.04f, 0.74f), new Vector2(0.6f, 0.95f));
+        lecturaAccion = ConstructorEscena.Texto(panel.transform, "Accion", Estilo.Negrita, 26, TextAnchor.MiddleRight, Estilo.MielOscura, new Vector2(0.4f, 0.74f), new Vector2(0.96f, 0.95f));
+        lecturaTexto = ConstructorEscena.Texto(panel.transform, "Texto", Estilo.SemiNegrita, 38, TextAnchor.MiddleCenter, Estilo.TextoOscuro, new Vector2(0.04f, 0.2f), new Vector2(0.96f, 0.76f));
+        lecturaTexto.verticalOverflow = VerticalWrapMode.Truncate;
+        lecturaTexto.resizeTextForBestFit = true;
+        lecturaTexto.resizeTextMinSize = 24;
+        lecturaTexto.resizeTextMaxSize = 40;
+
+        var barra = ConstructorEscena.Imagen(panel.transform, "Tiempo", SpritesUI.Redondeado, new Color(0.9f, 0.92f, 0.96f), new Vector2(0.04f, 0.08f), new Vector2(0.96f, 0.15f), 3.5f);
+        rellenoLectura = ConstructorEscena.Imagen(barra.transform, "Restante", SpritesUI.Redondeado, Estilo.Miel, Vector2.zero, Vector2.one, 3.5f);
+        barraLectura = rellenoLectura.rectTransform;
+        panelLectura.SetActive(false);
     }
 
     void ConstruirPanelFin(Transform hud)
@@ -523,25 +607,28 @@ public class JuegoMensajes : MonoBehaviour
         panelFin.GetComponent<Image>().raycastTarget = true;
 
         var tarjeta = ConstructorEscena.Imagen(panelFin.transform, "Tarjeta", SpritesUI.Redondeado, Estilo.Crema, Vector2.zero, Vector2.zero, 0.6f);
-        ConstructorEscena.Fijar(tarjeta.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1180f, 860f));
+        ConstructorEscena.Fijar(tarjeta.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(1260f, 900f));
         ConstructorEscena.Contorno(tarjeta, Estilo.Miel, 8f);
         ConstructorEscena.Sombra(tarjeta, new Color(0f, 0f, 0f, 0.3f), new Vector2(0f, -14f));
         var t = tarjeta.transform;
 
-        tituloFin = ConstructorEscena.Texto(t, "Titulo", Estilo.Negrita, 110, TextAnchor.MiddleCenter, Estilo.Verde, new Vector2(0f, 0.84f), new Vector2(1f, 0.99f));
+        tituloFin = ConstructorEscena.Texto(t, "Titulo", Estilo.Negrita, 110, TextAnchor.MiddleCenter, Estilo.Verde, new Vector2(0f, 0.85f), new Vector2(1f, 0.99f));
         ConstructorEscena.Contorno(tituloFin, Color.white, 6f);
         ConstructorEscena.Sombra(tituloFin, new Color(0f, 0f, 0f, 0.25f), new Vector2(0f, -8f));
-        subtituloFin = ConstructorEscena.Texto(t, "Subtitulo", Estilo.SemiNegrita, 36, TextAnchor.MiddleCenter, Estilo.TextoOscuro, new Vector2(0.05f, 0.77f), new Vector2(0.95f, 0.85f));
+        subtituloFin = ConstructorEscena.Texto(t, "Subtitulo", Estilo.SemiNegrita, 34, TextAnchor.MiddleCenter, Estilo.TextoOscuro, new Vector2(0.05f, 0.78f), new Vector2(0.95f, 0.86f));
 
         numeroAciertos = Insignia(t, 0.27f, Estilo.Verde, Estilo.VerdeOscuro, "ACIERTOS");
         numeroErrores = Insignia(t, 0.5f, Estilo.Rojo, Estilo.RojoOscuro, "ERRORES");
         numeroFinal = Insignia(t, 0.73f, Estilo.Miel, Estilo.MielOscura, "SCORE");
 
-        var caja = ConstructorEscena.Imagen(t, "Repaso", SpritesUI.Redondeado, Color.white, new Vector2(0.06f, 0.2f), new Vector2(0.94f, 0.47f), 1.2f);
+        textoArchivo = ConstructorEscena.Texto(t, "Archivo", Estilo.SemiNegrita, 26, TextAnchor.MiddleCenter, new Color(0.35f, 0.38f, 0.5f), new Vector2(0.04f, 0.455f), new Vector2(0.96f, 0.5f));
+
+        var caja = ConstructorEscena.Imagen(t, "Repaso", SpritesUI.Redondeado, Color.white, new Vector2(0.06f, 0.18f), new Vector2(0.94f, 0.44f), 1.2f);
         textoRepaso = ConstructorEscena.Texto(caja.transform, "Texto", Estilo.SemiNegrita, 28, TextAnchor.MiddleLeft, Estilo.TextoOscuro, new Vector2(0.04f, 0.06f), new Vector2(0.96f, 0.94f));
 
-        Boton(t, "JUGAR DE NUEVO  (R)", Estilo.Verde, Estilo.VerdeOscuro, new Vector2(-230f, 50f), Iniciar);
-        Boton(t, "MENÚ  (M)", Estilo.Azul, Estilo.AzulOscuro, new Vector2(230f, 50f), IrAlMenu);
+        Boton(t, "JUGAR DE NUEVO (R)", Estilo.Verde, Estilo.VerdeOscuro, new Vector2(-400f, 40f), Iniciar);
+        Boton(t, "VER ARCHIVOS CSV", Estilo.Miel, Estilo.MielOscura, new Vector2(0f, 40f), RegistroPartidas.AbrirCarpeta);
+        Boton(t, "MENÚ (M)", Estilo.Azul, Estilo.AzulOscuro, new Vector2(400f, 40f), IrAlMenu);
 
         panelFin.SetActive(false);
     }
@@ -549,13 +636,13 @@ public class JuegoMensajes : MonoBehaviour
     static Text Insignia(Transform padre, float x, Color color, Color oscuro, string etiqueta)
     {
         var raiz = ConstructorEscena.Rect(padre, etiqueta, Vector2.zero, Vector2.zero);
-        ConstructorEscena.Fijar(raiz, new Vector2(x, 0.62f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(150f, 150f));
+        ConstructorEscena.Fijar(raiz, new Vector2(x, 0.65f), new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(140f, 140f));
         var sombra = ConstructorEscena.Imagen(raiz, "Sombra", SpritesUI.Hexagono, oscuro, Vector2.zero, Vector2.one);
         sombra.rectTransform.anchoredPosition = new Vector2(0f, -7f);
         ConstructorEscena.Imagen(raiz, "Hexagono", SpritesUI.Hexagono, color, Vector2.zero, Vector2.one);
-        var numero = ConstructorEscena.Texto(raiz, "Numero", Estilo.Negrita, 64, TextAnchor.MiddleCenter, Color.white, Vector2.zero, Vector2.one);
+        var numero = ConstructorEscena.Texto(raiz, "Numero", Estilo.Negrita, 60, TextAnchor.MiddleCenter, Color.white, Vector2.zero, Vector2.one);
         ConstructorEscena.Contorno(numero, oscuro, 4f);
-        var texto = ConstructorEscena.Texto(raiz, "Etiqueta", Estilo.Negrita, 26, TextAnchor.UpperCenter, oscuro, new Vector2(-0.5f, -0.32f), new Vector2(1.5f, -0.04f));
+        var texto = ConstructorEscena.Texto(raiz, "Etiqueta", Estilo.Negrita, 24, TextAnchor.UpperCenter, oscuro, new Vector2(-0.5f, -0.3f), new Vector2(1.5f, -0.04f));
         texto.text = etiqueta;
         return numero;
     }
@@ -563,13 +650,13 @@ public class JuegoMensajes : MonoBehaviour
     static void Boton(Transform padre, string texto, Color color, Color oscuro, Vector2 posicion, UnityAction accion)
     {
         var fondo = ConstructorEscena.Imagen(padre, texto, SpritesUI.Redondeado, color, Vector2.zero, Vector2.zero, 0.8f);
-        ConstructorEscena.Fijar(fondo.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), posicion, new Vector2(420f, 110f));
+        ConstructorEscena.Fijar(fondo.rectTransform, new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), posicion, new Vector2(380f, 100f));
         ConstructorEscena.Sombra(fondo, oscuro, new Vector2(0f, -9f));
         fondo.raycastTarget = true;
         var boton = fondo.gameObject.AddComponent<Button>();
         boton.targetGraphic = fondo;
         boton.onClick.AddListener(accion);
-        var etiqueta = ConstructorEscena.Texto(fondo.transform, "Texto", Estilo.Negrita, 38, TextAnchor.MiddleCenter, Color.white, Vector2.zero, Vector2.one);
+        var etiqueta = ConstructorEscena.Texto(fondo.transform, "Texto", Estilo.Negrita, 32, TextAnchor.MiddleCenter, Color.white, Vector2.zero, Vector2.one);
         etiqueta.text = texto;
         ConstructorEscena.Contorno(etiqueta, oscuro, 3f);
     }
@@ -577,7 +664,25 @@ public class JuegoMensajes : MonoBehaviour
     void ActualizarHud()
     {
         textoScore.text = Mathf.Max(score, 0).ToString();
-        textoRestantes.text = $"Mensajes en la lista: {pendientes.Cantidad}";
+        textoRecord.text = $"Récord: {mejorAciertos}";
+        textoRestantes.text = $"En la lista: {pendientes.Cantidad}  ·  En juego: {enJuego.Cantidad}";
+    }
+
+    void ActualizarLectura(Cartel cartel)
+    {
+        if (cartel == null)
+        {
+            panelLectura.SetActive(false);
+            return;
+        }
+        panelLectura.SetActive(true);
+        lecturaUsuario.text = cartel.Nodo.Usuario;
+        lecturaTexto.text = cartel.Nodo.Texto;
+        lecturaAccion.text = cartel == cargado ? "Llévalo al panal correcto  ·  E: soltar" : "E: recoger";
+
+        float restante = cartel.Restante01;
+        barraLectura.anchorMax = new Vector2(restante, 1f);
+        rellenoLectura.color = restante > 0.3f ? Estilo.Miel : Color.Lerp(Estilo.Rojo, Estilo.Miel, restante / 0.3f);
     }
 
     void Avisar(string texto, Color color)
@@ -602,12 +707,10 @@ public class JuegoMensajes : MonoBehaviour
         textoAviso.transform.localScale = Vector3.one * escalaAviso;
         insigniaScore.localScale = Vector3.one * escalaScore;
 
-        if (tiempoAviso > 0f)
-        {
-            tiempoAviso -= Time.deltaTime;
-            var color = textoAviso.color;
-            color.a = Mathf.Clamp01(tiempoAviso / 0.3f);
-            textoAviso.color = color;
-        }
+        if (tiempoAviso <= 0f) return;
+        tiempoAviso -= Time.deltaTime;
+        var color = textoAviso.color;
+        color.a = Mathf.Clamp01(tiempoAviso / 0.3f);
+        textoAviso.color = color;
     }
 }
