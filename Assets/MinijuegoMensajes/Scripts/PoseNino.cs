@@ -7,8 +7,6 @@ public class PoseNino : MonoBehaviour
     {
         public Transform brazo, antebrazo, mano;
         public Transform[] indice;
-        public Transform[][] dedos;
-        public bool conTelefono;
     }
 
     class Pierna
@@ -18,21 +16,27 @@ public class PoseNino : MonoBehaviour
 
     const float DuracionSalto = 0.45f;
     const float DuracionNegar = 0.7f;
-    const float DuracionAviso = 0.5f;
+    const float VelocidadAnimacion = 1.5f;
 
     readonly Dictionary<string, Transform> huesos = new Dictionary<string, Transform>();
-    readonly Dictionary<Transform, Quaternion> reposo = new Dictionary<Transform, Quaternion>();
 
-    Transform caderas, columna, cuello, cabeza, telefono;
-    Brazo brazoPantallaIzquierda, brazoPantallaDerecha, brazoSenal;
+    Transform[] articulaciones;
+    Quaternion[] rotacionesReposo;
+    Vector3[] posicionesReposo;
+    Transform caderas, columna, cuello, cabeza;
+    Brazo[] brazos;
     Pierna[] piernas;
-    Vector3 posicionBase, frenteLocalCabeza, objetivoSenal;
-    float tiempoSenal, duracionSenal, tiempoSalto, tiempoNegar, tiempoAviso, fase;
+    AnimationClip caminata;
+    Vector3 posicionBase, caderasLocal;
+    float pesoCaminar, pesoCargar, tiempoClip, tiempoSalto, tiempoNegar, fase;
     bool listo;
 
-    static readonly Vector3 Frente = Vector3.back;
+    public float Caminar { get; set; }
+    public bool Cargando { get; set; }
 
-    public void Preparar(Vector3 posicion, float altura)
+    Vector3 Frente => transform.parent != null ? transform.parent.forward : transform.forward;
+
+    public void Preparar(float altura)
     {
         foreach (var t in GetComponentsInChildren<Transform>(true))
         {
@@ -43,71 +47,64 @@ public class PoseNino : MonoBehaviour
         }
 
         Orientar();
-        Escalar(posicion, altura);
+        Escalar(altura);
 
         caderas = Hueso("Hips");
         columna = Hueso("Spine");
         cuello = Hueso("Neck");
         cabeza = Hueso("Head");
-
-        var izquierdo = CrearBrazo("Left");
-        var derecho = CrearBrazo("Right");
-        if (izquierdo.brazo != null && derecho.brazo != null && izquierdo.brazo.position.x > derecho.brazo.position.x)
-        {
-            (izquierdo, derecho) = (derecho, izquierdo);
-        }
-        brazoPantallaIzquierda = izquierdo;
-        brazoPantallaDerecha = derecho;
-        brazoPantallaDerecha.conTelefono = true;
-
+        brazos = new[] { CrearBrazo("Left"), CrearBrazo("Right") };
         piernas = new[] { CrearPierna("Left"), CrearPierna("Right") };
 
+        var lista = new List<Transform>();
         foreach (var t in GetComponentsInChildren<Transform>(true))
-            if (t != transform) reposo[t] = t.localRotation;
+            if (t != transform) lista.Add(t);
+        articulaciones = lista.ToArray();
+        rotacionesReposo = new Quaternion[articulaciones.Length];
+        posicionesReposo = new Vector3[articulaciones.Length];
+        for (int i = 0; i < articulaciones.Length; i++)
+        {
+            rotacionesReposo[i] = articulaciones[i].localRotation;
+            posicionesReposo[i] = articulaciones[i].localPosition;
+        }
 
-        if (cabeza != null) frenteLocalCabeza = Quaternion.Inverse(cabeza.rotation) * Frente;
-        posicionBase = transform.position;
+        posicionBase = transform.localPosition;
+        if (caderas != null) caderasLocal = transform.InverseTransformPoint(caderas.position);
         listo = caderas != null;
-
-        if (listo && brazoPantallaDerecha.mano != null) CrearTelefono();
     }
 
-    public void Senalar(Vector3 objetivo, float segundos)
-    {
-        if (!listo) return;
-        objetivoSenal = objetivo;
-        brazoSenal = objetivo.x < transform.position.x ? brazoPantallaIzquierda : brazoPantallaDerecha;
-        duracionSenal = segundos;
-        tiempoSenal = segundos;
-    }
+    public void ConfigurarCaminata(AnimationClip clip) => caminata = clip;
 
     public void Celebrar() => tiempoSalto = DuracionSalto;
 
     public void Negar() => tiempoNegar = DuracionNegar;
 
-    public void AvisarMensaje() => tiempoAviso = DuracionAviso;
-
     void Orientar()
     {
-        transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+        var deseado = transform.parent != null ? transform.parent.forward : Vector3.forward;
+        transform.localPosition = Vector3.zero;
+        transform.localRotation = Quaternion.identity;
+
+        var adelante = transform.forward;
         var izquierdo = Hueso("LeftArm");
         var derecho = Hueso("RightArm");
-        var adelante = Vector3.forward;
         if (izquierdo != null && derecho != null)
         {
             var derecha = derecho.position - izquierdo.position;
             derecha.y = 0f;
             if (derecha.sqrMagnitude > 1e-6f) adelante = Vector3.Cross(derecha.normalized, Vector3.up);
         }
-        transform.rotation = Quaternion.AngleAxis(Vector3.SignedAngle(adelante, Frente, Vector3.up), Vector3.up);
+        adelante.y = 0f;
+        transform.rotation = Quaternion.AngleAxis(Vector3.SignedAngle(adelante, deseado, Vector3.up), Vector3.up) * transform.rotation;
     }
 
-    void Escalar(Vector3 posicion, float altura)
+    void Escalar(float altura)
     {
         var limites = Limites();
         if (limites.size.y > 1e-4f) transform.localScale *= altura / limites.size.y;
         limites = Limites();
-        transform.position += new Vector3(posicion.x - limites.center.x, posicion.y - limites.min.y, posicion.z - limites.center.z);
+        var origen = transform.parent != null ? transform.parent.position : Vector3.zero;
+        transform.position += new Vector3(origen.x - limites.center.x, origen.y - limites.min.y, origen.z - limites.center.z);
     }
 
     Bounds Limites()
@@ -126,8 +123,7 @@ public class PoseNino : MonoBehaviour
         brazo = Hueso(lado + "Arm"),
         antebrazo = Hueso(lado + "ForeArm"),
         mano = Hueso(lado + "Hand"),
-        indice = Cadena(lado + "HandIndex"),
-        dedos = new[] { Cadena(lado + "HandMiddle"), Cadena(lado + "HandRing"), Cadena(lado + "HandPinky") }
+        indice = Cadena(lado + "HandIndex")
     };
 
     Pierna CrearPierna(string lado) => new Pierna
@@ -149,49 +145,83 @@ public class PoseNino : MonoBehaviour
         return cadena.ToArray();
     }
 
-    void CrearTelefono()
-    {
-        telefono = new GameObject("Telefono").transform;
-        ConstructorEscena.Bloque(PrimitiveType.Cube, "Carcasa", telefono, Vector3.zero, new Vector3(0.085f, 0.165f, 0.014f), new Color(0.2f, 0.22f, 0.32f));
-        ConstructorEscena.Bloque(PrimitiveType.Cube, "Pantalla", telefono, new Vector3(0f, 0f, -0.0075f), new Vector3(0.072f, 0.145f, 0.002f), new Color(0.5f, 0.8f, 1f));
-    }
-
     void LateUpdate()
     {
         if (!listo) return;
 
         float dt = Time.deltaTime;
         fase += dt;
-        foreach (var par in reposo) par.Key.localRotation = par.Value;
+        pesoCaminar = Mathf.MoveTowards(pesoCaminar, Mathf.Clamp01(Caminar), dt * 6f);
+        pesoCargar = Mathf.MoveTowards(pesoCargar, Cargando ? 1f : 0f, dt * 5f);
+
+        for (int i = 0; i < articulaciones.Length; i++)
+        {
+            articulaciones[i].localRotation = rotacionesReposo[i];
+            articulaciones[i].localPosition = posicionesReposo[i];
+        }
+
+        if (pesoCaminar > 0.001f)
+        {
+            if (caminata != null) AplicarCaminata(dt);
+            else CaminataProcedural();
+        }
+
+        float quieto = 1f - pesoCaminar;
+        PosarPiernas(quieto);
+        PosarTronco(quieto);
+        foreach (var brazo in brazos) PosarBrazo(brazo, quieto);
+        PosarCabeza();
 
         float salto = 0f;
         if (tiempoSalto > 0f)
         {
             tiempoSalto -= dt;
-            salto = Mathf.Sin(Mathf.Clamp01(1f - tiempoSalto / DuracionSalto) * Mathf.PI) * 0.22f;
+            salto = Mathf.Sin(Mathf.Clamp01(1f - tiempoSalto / DuracionSalto) * Mathf.PI) * 0.25f;
         }
-        transform.position = posicionBase + Vector3.up * salto;
-
-        float peso = PesoSenal();
-        PosarPiernas();
-        PosarTronco(peso);
-        PosarBrazo(brazoPantallaIzquierda, brazoSenal == brazoPantallaIzquierda ? peso : 0f);
-        PosarBrazo(brazoPantallaDerecha, brazoSenal == brazoPantallaDerecha ? peso : 0f);
-        ColocarTelefono();
-        PosarCabeza(peso);
-
-        if (tiempoSenal > 0f) tiempoSenal -= dt;
+        transform.localPosition = posicionBase + Vector3.up * salto;
         if (tiempoNegar > 0f) tiempoNegar -= dt;
-        if (tiempoAviso > 0f) tiempoAviso -= dt;
     }
 
-    float PesoSenal()
+    void AplicarCaminata(float dt)
     {
-        if (tiempoSenal <= 0f || brazoSenal == null) return 0f;
-        float transcurrido = duracionSenal - tiempoSenal;
-        float entrada = Mathf.Clamp01(transcurrido / 0.15f);
-        float salida = Mathf.Clamp01(tiempoSenal / 0.3f);
-        return Mathf.SmoothStep(0f, 1f, Mathf.Min(entrada, salida));
+        tiempoClip = Mathf.Repeat(tiempoClip + dt * VelocidadAnimacion * Mathf.Max(0.6f, Caminar), caminata.length);
+
+        var posicion = transform.localPosition;
+        var rotacion = transform.localRotation;
+        var escala = transform.localScale;
+        caminata.SampleAnimation(gameObject, tiempoClip);
+        transform.localPosition = posicion;
+        transform.localRotation = rotacion;
+        transform.localScale = escala;
+
+        for (int i = 0; i < articulaciones.Length; i++)
+        {
+            articulaciones[i].localRotation = Quaternion.Slerp(rotacionesReposo[i], articulaciones[i].localRotation, pesoCaminar);
+            articulaciones[i].localPosition = Vector3.Lerp(posicionesReposo[i], articulaciones[i].localPosition, pesoCaminar);
+        }
+
+        var fijo = transform.TransformPoint(caderasLocal);
+        caderas.position = new Vector3(fijo.x, caderas.position.y, fijo.z);
+    }
+
+    void CaminataProcedural()
+    {
+        float paso = Mathf.Sin(fase * 7f * Mathf.Max(0.6f, Caminar));
+        for (int i = 0; i < piernas.Length; i++)
+        {
+            var p = piernas[i];
+            if (p.muslo == null || p.pierna == null || p.pie == null) continue;
+            float lado = i == 0 ? paso : -paso;
+            Apuntar(p.muslo, p.pierna, (Vector3.down + Frente * lado * 0.45f).normalized, pesoCaminar);
+            Apuntar(p.pierna, p.pie, (Vector3.down - Frente * Mathf.Max(0f, -lado) * 0.5f).normalized, pesoCaminar);
+        }
+        for (int i = 0; i < brazos.Length; i++)
+        {
+            var b = brazos[i];
+            if (b.brazo == null || b.antebrazo == null) continue;
+            float lado = i == 0 ? -paso : paso;
+            Apuntar(b.brazo, b.antebrazo, (Vector3.down + Frente * lado * 0.35f + Fuera(b.brazo) * 0.15f).normalized, pesoCaminar);
+        }
     }
 
     Vector3 Fuera(Transform hueso)
@@ -201,101 +231,50 @@ public class PoseNino : MonoBehaviour
         return lado.sqrMagnitude > 1e-6f ? lado.normalized : Vector3.right;
     }
 
-    void PosarPiernas()
+    void PosarPiernas(float peso)
     {
+        if (peso <= 0.001f) return;
         foreach (var p in piernas)
         {
             if (p.muslo == null || p.pierna == null || p.pie == null) continue;
-            Apuntar(p.muslo, p.pierna, (Vector3.down + Fuera(p.muslo) * 0.05f).normalized, 1f);
-            Apuntar(p.pierna, p.pie, Vector3.down, 1f);
+            Apuntar(p.muslo, p.pierna, (Vector3.down + Fuera(p.muslo) * 0.05f).normalized, peso);
+            Apuntar(p.pierna, p.pie, Vector3.down, peso);
         }
     }
 
     void PosarTronco(float peso)
     {
         if (columna == null || cuello == null) return;
-        float lado = Mathf.Sign(objetivoSenal.x - transform.position.x);
-        var direccion = (Vector3.up + Vector3.right * lado * 0.1f * peso).normalized;
-        Apuntar(columna, cuello, direccion, 1f);
-        columna.rotation = Quaternion.AngleAxis(-lado * 14f * peso, Vector3.up) * columna.rotation;
-        columna.rotation = Quaternion.AngleAxis(Mathf.Sin(fase * 2.2f) * 1.5f, Vector3.right) * columna.rotation;
+        if (peso > 0.001f) Apuntar(columna, cuello, Vector3.up, peso);
+        var lateral = Vector3.Cross(Vector3.up, Frente);
+        columna.rotation = Quaternion.AngleAxis(Mathf.Sin(fase * 2.2f) * 1.5f, lateral) * columna.rotation;
     }
 
-    void PosarBrazo(Brazo b, float peso)
+    void PosarBrazo(Brazo b, float quieto)
     {
-        if (b == null || b.brazo == null || b.antebrazo == null || b.mano == null) return;
-
+        if (b.brazo == null || b.antebrazo == null || b.mano == null) return;
         var fuera = Fuera(b.brazo);
-        Vector3 reposoBrazo, reposoAntebrazo;
-        if (b.conTelefono)
+
+        float reposo = quieto * (1f - pesoCargar);
+        if (reposo > 0.001f)
         {
-            reposoBrazo = (Vector3.down + Frente * 0.5f + fuera * 0.12f).normalized;
-            reposoAntebrazo = (Frente + Vector3.up * 0.4f - fuera * 0.6f).normalized;
-        }
-        else
-        {
-            float balanceo = Mathf.Sin(fase * 1.6f) * 0.04f;
-            reposoBrazo = (Vector3.down + fuera * 0.18f + Frente * (0.05f + balanceo)).normalized;
-            reposoAntebrazo = (Vector3.down + Frente * 0.25f + fuera * 0.03f).normalized;
+            Apuntar(b.brazo, b.antebrazo, (Vector3.down + fuera * 0.18f + Frente * 0.05f).normalized, reposo);
+            Apuntar(b.antebrazo, b.mano, (Vector3.down + Frente * 0.25f).normalized, reposo);
         }
 
-        var hacia = (objetivoSenal - b.brazo.position).normalized;
-        Apuntar(b.brazo, b.antebrazo, Vector3.Slerp(reposoBrazo, hacia, peso), 1f);
-        Apuntar(b.antebrazo, b.mano, Vector3.Slerp(reposoAntebrazo, hacia, peso), 1f);
-
-        var puntaMano = b.indice.Length > 0 ? b.indice[0] : null;
-        if (puntaMano != null) Apuntar(b.mano, puntaMano, Vector3.Slerp(reposoAntebrazo, hacia, peso), 1f);
-        if (peso <= 0.01f) return;
-
-        for (int i = 0; i < b.indice.Length - 1; i++) Apuntar(b.indice[i], b.indice[i + 1], hacia, peso);
-
-        var abajo = Vector3.down - Vector3.Dot(Vector3.down, hacia) * hacia;
-        abajo = abajo.sqrMagnitude > 1e-6f ? abajo.normalized : Frente;
-        var curvas = new[]
-        {
-            Vector3.Slerp(hacia, abajo, 0.9f),
-            Vector3.Slerp(abajo, -hacia, 0.65f),
-            -hacia
-        };
-        foreach (var dedo in b.dedos)
-            for (int i = 0; i < dedo.Length - 1 && i < curvas.Length; i++)
-                Apuntar(dedo[i], dedo[i + 1], curvas[i], peso);
+        if (pesoCargar <= 0.001f) return;
+        var arriba = (Vector3.up + Frente * 0.35f + fuera * 0.3f).normalized;
+        var antebrazo = (Vector3.up + Frente * 0.15f - fuera * 0.2f).normalized;
+        Apuntar(b.brazo, b.antebrazo, arriba, pesoCargar);
+        Apuntar(b.antebrazo, b.mano, antebrazo, pesoCargar);
+        if (b.indice.Length > 0) Apuntar(b.mano, b.indice[0], antebrazo, pesoCargar);
     }
 
-    void ColocarTelefono()
+    void PosarCabeza()
     {
-        if (telefono == null) return;
-        var b = brazoPantallaDerecha;
-        var medio = b.dedos[0].Length > 0 ? b.dedos[0][0].position : b.mano.position;
-        var posicion = Vector3.Lerp(b.mano.position, medio, 0.7f);
-        var haciaCabeza = cabeza != null ? cabeza.position - posicion : Vector3.up;
-        posicion += haciaCabeza.normalized * 0.025f;
-        telefono.position = posicion;
-        telefono.rotation = Quaternion.LookRotation(-haciaCabeza.normalized, Vector3.up);
-        float pulso = tiempoAviso > 0f ? Mathf.Sin((1f - tiempoAviso / DuracionAviso) * Mathf.PI) * 0.35f : 0f;
-        telefono.localScale = Vector3.one * (1f + pulso);
-    }
-
-    void PosarCabeza(float peso)
-    {
-        if (cabeza == null) return;
-
-        Vector3? objetivo = null;
-        if (peso > 0.2f) objetivo = objetivoSenal;
-        else if (telefono != null) objetivo = telefono.position;
-
-        if (objetivo.HasValue)
-        {
-            var actual = cabeza.rotation * frenteLocalCabeza;
-            var deseada = objetivo.Value - cabeza.position;
-            cabeza.rotation = Quaternion.Slerp(Quaternion.identity, Quaternion.FromToRotation(actual, deseada), 0.45f) * cabeza.rotation;
-        }
-
-        if (tiempoNegar > 0f)
-        {
-            float intensidad = tiempoNegar / DuracionNegar;
-            cabeza.rotation = Quaternion.AngleAxis(Mathf.Sin(fase * 26f) * 20f * intensidad, Vector3.up) * cabeza.rotation;
-        }
+        if (cabeza == null || tiempoNegar <= 0f) return;
+        float intensidad = tiempoNegar / DuracionNegar;
+        cabeza.rotation = Quaternion.AngleAxis(Mathf.Sin(fase * 26f) * 20f * intensidad, Vector3.up) * cabeza.rotation;
     }
 
     static void Apuntar(Transform hueso, Transform hijo, Vector3 direccion, float peso)

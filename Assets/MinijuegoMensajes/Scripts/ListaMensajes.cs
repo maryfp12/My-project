@@ -60,6 +60,26 @@ public class ListaMensajes
         return nodo;
     }
 
+    public bool Quitar(NodoMensaje objetivo)
+    {
+        if (cabeza == null || objetivo == null) return false;
+        if (cabeza == objetivo)
+        {
+            SacarPrimero();
+            return true;
+        }
+
+        var anterior = cabeza;
+        while (anterior.Siguiente != null && anterior.Siguiente != objetivo) anterior = anterior.Siguiente;
+        if (anterior.Siguiente == null) return false;
+
+        anterior.Siguiente = objetivo.Siguiente;
+        if (objetivo == cola) cola = anterior;
+        objetivo.Siguiente = null;
+        Cantidad--;
+        return true;
+    }
+
     public void Mezclar()
     {
         var mezclada = new ListaMensajes();
