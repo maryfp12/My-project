@@ -610423,7 +610423,7 @@ MonoBehaviour:
   velocidad: 3
   puerta: {fileID: 2142954235}
   distanciaPuerta: 1.5
-  siguienteEscena: 
+  siguienteEscena: Juego
 --- !u!1001 &2049885971
 PrefabInstance:
   m_ObjectHideFlags: 0

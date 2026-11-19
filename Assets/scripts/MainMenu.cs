@@ -4,10 +4,11 @@ public class MainMenu : MonoBehaviour
 {
     public GameObject Main_Menu;
 
-    [SerializeField] string nombreSiguienteEscene =  "Pasadizo";
-
+    [SerializeField] string nombreSiguienteEscena =  "inicio 2.0";
+    
     public void play (){
-        SceneManager.LoadScene(nombreSiguienteEscene);
+
+        SceneManager.LoadScene(nombreSiguienteEscena);
     }
 
     public void settings () {
