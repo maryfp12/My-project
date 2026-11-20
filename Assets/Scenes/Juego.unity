@@ -440,7 +440,7 @@ MonoBehaviour:
   separacionX: 1.35
   separacionZ: 1.85
   segundosVistaPrevia: 2.5
-  escenaMenu: MainMenu
+  escenaMenu: SalaMinijuegos
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

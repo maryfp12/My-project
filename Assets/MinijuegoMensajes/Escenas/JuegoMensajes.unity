@@ -51,7 +51,7 @@ MonoBehaviour:
   intervaloInicial: 7
   intervaloMinimo: 3.5
   reduccionIntervalo: 0.15
-  escenaMenu: MainMenu
+  escenaMenu: SalaMinijuegos
   personaje: {fileID: 0}
   texturaPersonaje: {fileID: 0}
   alturaPersonaje: 1.7
