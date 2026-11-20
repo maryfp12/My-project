@@ -1624,7 +1624,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 95b7fb8ba04a8164788ddce1e42ac254, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -33.69
+      value: -32.97
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 95b7fb8ba04a8164788ddce1e42ac254, type: 3}
       propertyPath: m_LocalPosition.y
@@ -1632,7 +1632,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 95b7fb8ba04a8164788ddce1e42ac254, type: 3}
       propertyPath: m_LocalPosition.z
-      value: -16.52
+      value: -15.79
       objectReference: {fileID: 0}
     - target: {fileID: -8679921383154817045, guid: 95b7fb8ba04a8164788ddce1e42ac254, type: 3}
       propertyPath: m_LocalRotation.w
@@ -1735,10 +1735,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7429c7641960d9d42b5bcc06ac557db2, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::JugadorIsla
-  velocidad: 5
+  velocidad: 8
   fuerzaSalto: 9
   gravedad: -25
   giro: 12
+  puntoInicio: {fileID: 0}
 --- !u!4 &1322916946 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 95b7fb8ba04a8164788ddce1e42ac254, type: 3}
@@ -5833,6 +5834,7 @@ GameObject:
   - component: {fileID: 218570758881917033}
   - component: {fileID: 6104021293662422412}
   - component: {fileID: 1746051844287546370}
+  - component: {fileID: 6104021293662422413}
   m_Layer: 0
   m_Name: Props_11
   m_TagString: Untagged
@@ -6307,6 +6309,28 @@ MeshFilter:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5190885190503908550}
+  m_Mesh: {fileID: 8132423522751337658, guid: f184ba4911fbaaa4195a4f967a69e3bf, type: 3}
+--- !u!64 &6104021293662422413
+MeshCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5190885190503908550}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 5
+  m_Convex: 0
+  m_CookingOptions: 30
   m_Mesh: {fileID: 8132423522751337658, guid: f184ba4911fbaaa4195a4f967a69e3bf, type: 3}
 --- !u!4 &6132266811654828063
 Transform:
