@@ -7,7 +7,6 @@ using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
-using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 public class JuegoMensajes : MonoBehaviour
@@ -22,7 +21,7 @@ public class JuegoMensajes : MonoBehaviour
     [SerializeField] float reduccionIntervalo = 0.15f;
 
     [Header("Escenas")]
-    [SerializeField] string escenaMenu = "MainMenu";
+    [SerializeField] string escenaMenu = "SalaMinijuegos";
 
     [Header("Personaje")]
     [SerializeField] GameObject personaje;
@@ -71,6 +70,8 @@ public class JuegoMensajes : MonoBehaviour
 
     void Start()
     {
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
         ConfigurarCamaraYLuz();
         Parque.Construir();
         cinta = CintaTransportadora.Crear(CintaDesde, CintaHasta, CintaZ);
@@ -82,6 +83,7 @@ public class JuegoMensajes : MonoBehaviour
         ConstruirHud();
         mejorAciertos = RegistroPartidas.MejorAciertos();
         Iniciar();
+        Transicion.Entrar();
     }
 
     void Update()
@@ -325,11 +327,7 @@ public class JuegoMensajes : MonoBehaviour
 
     void IrAlMenu()
     {
-        if (Application.CanStreamedLevelBeLoaded(escenaMenu))
-        {
-            SceneManager.LoadScene(escenaMenu);
-            return;
-        }
+        if (Transicion.Ir(escenaMenu)) return;
         string aviso = $"Agrega \"{escenaMenu}\" a las escenas del build";
         if (panelFin.activeSelf) subtituloFin.text = aviso;
         else Avisar(aviso, Color.white);
@@ -444,70 +442,7 @@ public class JuegoMensajes : MonoBehaviour
 
     void CrearJugador()
     {
-        var raiz = new GameObject("Jugador");
-        raiz.transform.SetPositionAndRotation(InicioJugador, Quaternion.identity);
-        var control = raiz.AddComponent<CharacterController>();
-        control.height = alturaPersonaje;
-        control.radius = 0.35f;
-        control.center = new Vector3(0f, alturaPersonaje * 0.5f, 0f);
-        control.stepOffset = 0.3f;
-        jugador = raiz.AddComponent<JugadorMovimiento>();
-
-        var modelo = personaje != null ? personaje : Resources.Load<GameObject>("Nino/Walking");
-        if (modelo != null)
-        {
-            var instancia = Instantiate(modelo, raiz.transform);
-            instancia.name = "Nino";
-            foreach (var componente in instancia.GetComponentsInChildren<MonoBehaviour>()) componente.enabled = false;
-            foreach (var otro in instancia.GetComponentsInChildren<CharacterController>()) otro.enabled = false;
-            foreach (var animador in instancia.GetComponentsInChildren<Animator>()) animador.enabled = false;
-            foreach (var camaraExtra in instancia.GetComponentsInChildren<Camera>()) camaraExtra.enabled = false;
-            foreach (var oido in instancia.GetComponentsInChildren<AudioListener>()) oido.enabled = false;
-            foreach (var colisionador in instancia.GetComponentsInChildren<Collider>()) colisionador.enabled = false;
-            AplicarTextura(instancia);
-
-            nino = instancia.AddComponent<PoseNino>();
-            nino.Preparar(alturaPersonaje);
-            nino.ConfigurarCaminata(BuscarCaminata(modelo));
-        }
-        else
-        {
-            var cuerpo = ConstructorEscena.Bloque(PrimitiveType.Capsule, "Cuerpo", raiz.transform, new Vector3(0f, alturaPersonaje * 0.5f, 0f), new Vector3(0.7f, alturaPersonaje * 0.5f, 0.7f), Estilo.Azul);
-            nino = cuerpo.AddComponent<PoseNino>();
-        }
-
-        jugador.Configurar(camara.transform, nino);
-    }
-
-    void AplicarTextura(GameObject instancia)
-    {
-        var textura = texturaPersonaje;
-        if (textura == null && personaje == null) textura = Resources.Load<Texture2D>("Nino/texture_diffuse");
-        if (textura == null) return;
-
-        var material = ConstructorEscena.NuevoMaterial(Color.white, 0.12f);
-        material.mainTexture = textura;
-        foreach (var r in instancia.GetComponentsInChildren<Renderer>())
-        {
-            var materiales = r.sharedMaterials;
-            for (int i = 0; i < materiales.Length; i++) materiales[i] = material;
-            r.sharedMaterials = materiales;
-        }
-    }
-
-    AnimationClip BuscarCaminata(GameObject modelo)
-    {
-        if (personaje == null)
-        {
-            foreach (var clip in Resources.LoadAll<AnimationClip>("Nino/Walking"))
-                if (!clip.name.StartsWith("__preview__")) return clip;
-            return null;
-        }
-
-        var animador = modelo.GetComponentInChildren<Animator>();
-        if (animador == null || animador.runtimeAnimatorController == null) return null;
-        var clips = animador.runtimeAnimatorController.animationClips;
-        return clips.Length > 0 ? clips[0] : null;
+        jugador = FabricaJugador.CrearNino(InicioJugador, Quaternion.identity, alturaPersonaje, personaje, texturaPersonaje, camara.transform, out nino);
     }
 
     void ConstruirHud()
@@ -628,7 +563,7 @@ public class JuegoMensajes : MonoBehaviour
 
         Boton(t, "JUGAR DE NUEVO (R)", Estilo.Verde, Estilo.VerdeOscuro, new Vector2(-400f, 40f), Iniciar);
         Boton(t, "VER ARCHIVOS CSV", Estilo.Miel, Estilo.MielOscura, new Vector2(0f, 40f), RegistroPartidas.AbrirCarpeta);
-        Boton(t, "MENÚ (M)", Estilo.Azul, Estilo.AzulOscuro, new Vector2(400f, 40f), IrAlMenu);
+        Boton(t, "SALA (M)", Estilo.Azul, Estilo.AzulOscuro, new Vector2(400f, 40f), IrAlMenu);
 
         panelFin.SetActive(false);
     }
