@@ -8,11 +8,14 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/MainMenu.unity
     guid: 8ace27bb51c9fa646bf601d92760f9ef
-  - enabled: 1
-    path: Assets/Scenes/Pasadizo.unity
-    guid: a6f1a4a1b1f562d4d94a263d46c747a8
+  - enabled: 0
+    path: Assets/Scenes/pasadizo.unity
+    guid: 6cd81e17b03d0c242a8884e3326cf1d2
   - enabled: 1
     path: Assets/Scenes/Juego.unity
     guid: 7faba823ab5e1604ab4c6b587a84f2da
+  - enabled: 1
+    path: Assets/Scenes/inicio 2.0.unity
+    guid: fea7288879038454cb4164d535dbf1be
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
