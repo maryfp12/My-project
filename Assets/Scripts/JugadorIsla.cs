@@ -7,8 +7,7 @@ public class JugadorIsla : MonoBehaviour
     public float velocidad = 6f;
     public float fuerzaSalto = 9f;
     public float gravedad = -25f;
-    public float velocidadGiro = 120f;   // grados por segundo
-
+    public float velocidadGiro = 150f;
     public Transform puntoInicio;
 
     CharacterController controlador;
@@ -23,10 +22,10 @@ public class JugadorIsla : MonoBehaviour
         if (puntoInicio != null)
         {
             controlador.enabled = false;
-            transform.SetPositionAndRotation(puntoInicio.position, puntoInicio.rotation);
+            transform.position = puntoInicio.position;
+            transform.rotation = puntoInicio.rotation;
             controlador.enabled = true;
         }
-        velocidadY = 0;
     }
 
     void Update()
@@ -34,49 +33,47 @@ public class JugadorIsla : MonoBehaviour
         var teclado = Keyboard.current;
         if (teclado == null) return;
 
-        float x = 0;
-        float z = 0;
-        if (teclado.aKey.isPressed || teclado.leftArrowKey.isPressed) x = -1;
-        if (teclado.dKey.isPressed || teclado.rightArrowKey.isPressed) x = 1;
-        if (teclado.wKey.isPressed || teclado.upArrowKey.isPressed) z = 1;
-        if (teclado.sKey.isPressed || teclado.downArrowKey.isPressed) z = -1;
+        float giro = 0;
+        float avance = 0;
+        if (teclado.aKey.isPressed) giro = -1;
+        if (teclado.dKey.isPressed) giro = 1;
+        if (teclado.wKey.isPressed) avance = 1;
+        if (teclado.sKey.isPressed) avance = -1;
 
-        // A/D giran al personaje
-        transform.Rotate(0f, x * velocidadGiro * Time.deltaTime, 0f);
-
-        // W/S avanzan hacia donde mira
-        Vector3 direccion = transform.forward * z;
-        bool moviendo = Mathf.Abs(z) > 0.01f;
-
-        bool saltoEsteFrame = false;
+        transform.Rotate(0, giro * velocidadGiro * Time.deltaTime, 0);
 
         if (controlador.isGrounded)
         {
-            if (velocidadY < 0) velocidadY = -2f;
+            velocidadY = -2f;
             if (teclado.spaceKey.wasPressedThisFrame)
             {
                 velocidadY = fuerzaSalto;
-                saltoEsteFrame = true;
-                if (animador != null)
-                {
-                    animador.SetBool("EnSuelo", false);
-                    animador.SetTrigger("Salto");
-                }
+                if (animador != null) animador.SetTrigger("Salto");
             }
         }
         velocidadY += gravedad * Time.deltaTime;
 
-        Vector3 movimiento = direccion * velocidad;
+        Vector3 movimiento = transform.forward * avance * velocidad;
         movimiento.y = velocidadY;
         controlador.Move(movimiento * Time.deltaTime);
 
         if (animador != null)
         {
-            if (!saltoEsteFrame)
-                animador.SetBool("EnSuelo", controlador.isGrounded);
-
-            animador.SetFloat("Velocidad", moviendo ? 1f : 0f);
-            animador.speed = 1f;
+            animador.SetBool("EnSuelo", controlador.isGrounded);
+            animador.SetFloat("Velocidad", avance != 0 ? 1f : 0f);
+        }
+    }
+   void OnTriggerEnter(Collider other)
+   {
+        if (other.CompareTag("Martillo") || other.CompareTag("Clavos"))
+        {
+           GameOver gameOver = FindObjectOfType<GameOver>();
+           if (gameOver != null)
+             gameOver.Terminar();
         }
     }
 }
+
+
+
+    
