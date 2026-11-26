@@ -642,8 +642,33 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 6721931059143736564, guid: d11cbcf1bd1e5f346839e2f676d89830, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1026945785}
   m_SourcePrefab: {fileID: 100100000, guid: d11cbcf1bd1e5f346839e2f676d89830, type: 3}
+--- !u!1 &1026945784 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6721931059143736564, guid: d11cbcf1bd1e5f346839e2f676d89830, type: 3}
+  m_PrefabInstance: {fileID: 1026945783}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &1026945785
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1026945784}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c89fc04465ff6a34d894ee9f6e9a8324, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PuertaEscena
+  escena: SalaMinijuegos
+  destino: la sala de minijuegos
+  distancia: 7.37716
+  distanciaToque: 3.1211064
+  entrarAlAcercarse: 1
 --- !u!1001 &1473530153
 PrefabInstance:
   m_ObjectHideFlags: 0
