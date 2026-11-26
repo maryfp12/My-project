@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 5449253253207292984}
   - component: {fileID: -3583298531633134996}
   m_Layer: 0
-  m_Name: EstrellaBuena
+  m_Name: Estrella
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
