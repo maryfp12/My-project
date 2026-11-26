@@ -169,3 +169,6 @@ Packages/packages-lock.json linguist-generated
 
 # Exceptions for .asset files such as lightning pre-baking
 LightingData.asset     binary
+
+# Terrenos: Unity los guarda en binario, no se deben tocar los saltos de linea
+*Terrain*.asset         binary
