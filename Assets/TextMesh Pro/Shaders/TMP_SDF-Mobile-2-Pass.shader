@@ -241,6 +241,10 @@ SubShader {
 		ENDCG
 	}
 
+<<<<<<< HEAD
+
+=======
+>>>>>>> origin/test
 	// Draw face
 	Name "Face"
 
