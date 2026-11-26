@@ -948,14 +948,22 @@ PlayerSettings:
   qnxGraphicConfPath: 
   apiCompatibilityLevel: 6
   captureStartupLogs: {}
-  activeInputHandler: 1
+  activeInputHandler: 2
   windowsGamepadBackendHint: 0
   enableDirectStorage: 0
+<<<<<<< HEAD
   cloudProjectId: 01c7ea58-2c2f-469c-84dd-cff621b22683
   framebufferDepthMemorylessMode: 0
   qualitySettingsNames: []
   projectName: My project
   organizationId: tarabeinasmaa25
+=======
+  cloudProjectId: 666f094e-85ae-42bb-8dce-120476d6ffdc
+  framebufferDepthMemorylessMode: 0
+  qualitySettingsNames: []
+  projectName: My project
+  organizationId: mefonsecamw8cp2he
+>>>>>>> origin/test
   cloudEnabled: 0
   legacyClampBlendShapeWeights: 0
   hmiLoadingImage: {fileID: 0}
