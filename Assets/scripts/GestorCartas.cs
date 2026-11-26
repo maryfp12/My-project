@@ -14,6 +14,7 @@ public class GestorCartas : MonoBehaviour
     public GameObject camaraLibre;
     public GameObject camaraCartas;
     public TMPro.TMP_Text textoResultado;
+    public PanelFinal panelFinal;
 
     List<Carta> cartas = new List<Carta>();
     bool iniciado, puedeElegir, comparando;
@@ -121,13 +122,32 @@ public class GestorCartas : MonoBehaviour
         if (aciertos >= materialesFrente.Length) StartCoroutine(Ganar());
     }
 
-    IEnumerator Ganar()
+        IEnumerator Ganar()
     {
         puedeElegir = false;
         if (textoResultado) textoResultado.text = "¡Ganaste! Intentos: " + intentos;
-        yield return new WaitForSeconds(4f);
+        yield return new WaitForSeconds(3f);
         if (textoResultado) textoResultado.text = "";
         Congelar(false);
+        yield return new WaitForSeconds(1.2f);
+        BloquearFinal();
+        if (panelFinal) panelFinal.Mostrar(intentos);
+    }
+
+    void BloquearFinal()
+    {
+        if (jugador)
+        {
+            jugador.enabled = false;
+            Animator anim = jugador.GetComponentInChildren<Animator>();
+            if (anim) anim.SetFloat("Speed", 0f);
+        }
+
+        if (camaraLibre)
+        {
+            foreach (Behaviour b in camaraLibre.GetComponents<Behaviour>())
+                if (b.GetType().Name == "CinemachineInputAxisController") b.enabled = false;
+        }
     }
 
     void ActualizarTexto()

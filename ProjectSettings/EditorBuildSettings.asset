@@ -17,5 +17,8 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/inicio 2.0.unity
     guid: fea7288879038454cb4164d535dbf1be
+  - enabled: 1
+    path: Assets/Scenes/JuegoMemoria.unity
+    guid: 03258a9d975c8f044adba2ac1307dcaa
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
